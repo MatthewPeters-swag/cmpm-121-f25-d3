@@ -23,3 +23,8 @@
   font-size: 12px;
   font-weight: bold;
 }
+
+/* Player marker highlight (optional tweak) */
+.leaflet-interactive[stroke="#00f"] {
+  stroke: blue;
+}

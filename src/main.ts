@@ -2,10 +2,10 @@ import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
 
-// Import luck function for deterministic randomness
+// Import deterministic randomness function
 import luck from "./_luck.ts";
 
-// Create basic UI elements
+// --- UI setup ---
 const controlPanelDiv = document.createElement("div");
 controlPanelDiv.id = "controlPanel";
 document.body.append(controlPanelDiv);
@@ -18,13 +18,13 @@ const statusPanelDiv = document.createElement("div");
 statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
-// Classroom location
+// --- Constants ---
 const CLASSROOM_LATLNG = L.latLng(36.997936938057016, -122.05703507501151);
-
-// Fixed zoom level
 const ZOOM_LEVEL = 19;
+const TILE_DEGREES = 0.0001; // each cell ≈ size of a house
+const INTERACTION_RADIUS_CELLS = 3; // how many cells away player can interact
 
-// Create the map
+// --- Map setup ---
 const map = L.map(mapDiv, {
   center: CLASSROOM_LATLNG,
   zoom: ZOOM_LEVEL,
@@ -34,37 +34,42 @@ const map = L.map(mapDiv, {
   scrollWheelZoom: false,
 });
 
-// Add OpenStreetMap tiles
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution:
     '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
 
-// Grid parameters
-const TILE_DEGREES = 0.0001; // size of each cell in degrees
-
-// Token parameters
-const TOKEN_PROBABILITY = 0.1; // chance a cell has a token
-const TOKEN_VALUES = [2, 4]; // possible token values
-
-// Layer group to hold the grid rectangles
+// --- Layers ---
 const gridLayer = L.layerGroup().addTo(map);
-
-// Map from cell keys to token info (persistent across redraws)
 const tokenMap = new Map<string, { value: number }>();
 
-// Function to get deterministic token for a cell
+// --- Token constants ---
+const TOKEN_PROBABILITY = 0.1;
+const TOKEN_VALUES = [2, 4];
+
+// --- Player marker ---
+L.marker(CLASSROOM_LATLNG, {
+  title: "You are here!",
+}).addTo(map);
+
+// --- Player interaction radius (visualized as circle) ---
+//const interactionRadiusDegrees = INTERACTION_RADIUS_CELLS * TILE_DEGREES;
+//L.circle(CLASSROOM_LATLNG, {
+//  radius: interactionRadiusDegrees * 111_000, // convert degrees → meters
+//  color: "blue",
+//  weight: 1,
+//  fillOpacity: 0.05,
+//}).addTo(map);
+
+// --- Helper: deterministic token generation ---
 function getToken(i: number, j: number) {
   const key = `${i},${j}`;
-  if (tokenMap.has(key)) {
-    return tokenMap.get(key);
-  }
+  if (tokenMap.has(key)) return tokenMap.get(key);
 
   const r = luck(key);
   if (r < TOKEN_PROBABILITY) {
-    // Pick value deterministically (based on key)
-    const valueIndex = Math.floor(luck(key + "_value") * TOKEN_VALUES.length);
+    const valueIndex = Math.floor(luck(key + "_v") * TOKEN_VALUES.length);
     const token = { value: TOKEN_VALUES[valueIndex] };
     tokenMap.set(key, token);
     return token;
@@ -73,13 +78,20 @@ function getToken(i: number, j: number) {
   return null;
 }
 
-// Function to draw grid cells in the current map bounds
+// --- Helper: check if cell is within player range ---
+function isInRange(i: number, j: number) {
+  const playerI = Math.floor(CLASSROOM_LATLNG.lat / TILE_DEGREES);
+  const playerJ = Math.floor(CLASSROOM_LATLNG.lng / TILE_DEGREES);
+  const di = Math.abs(i - playerI);
+  const dj = Math.abs(j - playerJ);
+  return di <= INTERACTION_RADIUS_CELLS && dj <= INTERACTION_RADIUS_CELLS;
+}
+
+// --- Draw visible grid with tokens and highlights ---
 function drawGrid() {
-  // First remove existing grid rectangles
   gridLayer.clearLayers();
 
   const bounds = map.getBounds();
-
   const south = bounds.getSouth();
   const north = bounds.getNorth();
   const west = bounds.getWest();
@@ -92,18 +104,24 @@ function drawGrid() {
 
   for (let i = iStart; i <= iEnd; i++) {
     for (let j = jStart; j <= jEnd; j++) {
-      const rectBounds: L.LatLngTuple[] = [
+      const cellBounds: L.LatLngTuple[] = [
         [i * TILE_DEGREES, j * TILE_DEGREES],
         [(i + 1) * TILE_DEGREES, (j + 1) * TILE_DEGREES],
       ];
 
-      L.rectangle(rectBounds, {
-        color: "#555",
-        weight: 1,
+      const inRange = isInRange(i, j);
+
+      // Make nearby cells highlighted
+      const rectColor = inRange ? "#00f" : "#555";
+      const rectWeight = inRange ? 2 : 1;
+
+      L.rectangle(cellBounds, {
+        color: rectColor,
+        weight: rectWeight,
         fillOpacity: 0,
       }).addTo(gridLayer);
 
-      // Display token if cell has one
+      // Add token marker if cell has one
       const token = getToken(i, j);
       if (token) {
         const centerLat = i * TILE_DEGREES + TILE_DEGREES / 2;
@@ -121,9 +139,7 @@ function drawGrid() {
   }
 }
 
-// Initial grid draw
+// --- Initial draw and updates ---
 drawGrid();
-
-// Redraw grid when map moves or zoom changes (dynamic coverage)
 map.on("moveend", drawGrid);
 map.on("zoomend", drawGrid);

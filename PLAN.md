@@ -54,9 +54,9 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 
 -- Player Representation --
 
-- [ ] Add a fixed “player” marker at the classroom coordinates
-- [ ] Define an interaction radius (about 3 cells away)
-- [ ] Highlight or activate nearby cells when in range
+- [x] Add a fixed “player” marker at the classroom coordinates
+- [x] Define an interaction radius (about 3 cells away)
+- [x] Highlight or activate nearby cells when in range
 
 -- Interaction + Gameplay --
 
