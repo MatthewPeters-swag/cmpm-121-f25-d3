@@ -62,7 +62,7 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 
 - [x] Allow player to click nearby cells to interact
 - [x] If cell has token and player hand is empty → pick up token (remove from cell)
-- [ ] If player holds a token → clicking another nearby cell will attempt to place it
+- [x] If player holds a token → clicking another nearby cell will attempt to place it
 
   - [x] If target cell empty → place token
   - [x] If target cell contains token of same value → merge into double-value token
