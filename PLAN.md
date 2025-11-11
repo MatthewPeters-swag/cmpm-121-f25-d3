@@ -39,9 +39,9 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 -- Map Rendering --
 
 - [x] Display a Leaflet map centered on the classroom coordinates
-- [x] Disable panning limits so the map appears to cover the entire world
-- [x] Implement fixed zoom level suitable for viewing the grid
-- [x] Create and render grid cells using latitude/longitude spacing (≈0.0001° per side)
+- [ ] Disable panning limits so the map appears to cover the entire world
+- [ ] Implement fixed zoom level suitable for viewing the grid
+- [ ] Create and render grid cells using latitude/longitude spacing (≈0.0001° per side)
 - [ ] Draw visible borders for all cells
 - [ ] Ensure grid covers visible map area dynamically (not just a static patch)
 
