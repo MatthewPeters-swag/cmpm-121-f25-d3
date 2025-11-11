@@ -1,8 +1,6 @@
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
-
-// Import deterministic randomness function
 import luck from "./_luck.ts";
 
 // --- UI setup ---
@@ -21,8 +19,8 @@ document.body.append(statusPanelDiv);
 // --- Constants ---
 const CLASSROOM_LATLNG = L.latLng(36.997936938057016, -122.05703507501151);
 const ZOOM_LEVEL = 19;
-const TILE_DEGREES = 0.0001; // each cell ≈ size of a house
-const INTERACTION_RADIUS_CELLS = 3; // how many cells away player can interact
+const TILE_DEGREES = 0.0001;
+const INTERACTION_RADIUS_CELLS = 3;
 
 // --- Map setup ---
 const map = L.map(mapDiv, {
@@ -49,23 +47,19 @@ const TOKEN_PROBABILITY = 0.1;
 const TOKEN_VALUES = [2, 4];
 
 // --- Player marker ---
-L.marker(CLASSROOM_LATLNG, {
-  title: "You are here!",
-}).addTo(map);
+L.marker(CLASSROOM_LATLNG, { title: "You are here!" }).addTo(map);
 
-// --- Player interaction radius (visualized as circle) ---
-//const interactionRadiusDegrees = INTERACTION_RADIUS_CELLS * TILE_DEGREES;
-//L.circle(CLASSROOM_LATLNG, {
-//  radius: interactionRadiusDegrees * 111_000, // convert degrees → meters
-//  color: "blue",
-//  weight: 1,
-//  fillOpacity: 0.05,
-//}).addTo(map);
+// --- Player state ---
+let heldToken: { value: number } | null = null;
+
+// --- Track permanently emptied cells (so tokens don't respawn) ---
+const emptyCells = new Set<string>();
 
 // --- Helper: deterministic token generation ---
 function getToken(i: number, j: number) {
   const key = `${i},${j}`;
   if (tokenMap.has(key)) return tokenMap.get(key);
+  if (emptyCells.has(key)) return null; // permanently empty
 
   const r = luck(key);
   if (r < TOKEN_PROBABILITY) {
@@ -74,20 +68,72 @@ function getToken(i: number, j: number) {
     tokenMap.set(key, token);
     return token;
   }
-
   return null;
 }
 
-// --- Helper: check if cell is within player range ---
+// --- Helper: coordinate conversions ---
+function latLngToCell(lat: number, lng: number) {
+  return {
+    i: Math.floor(lat / TILE_DEGREES),
+    j: Math.floor(lng / TILE_DEGREES),
+  };
+}
+
+function cellToCenter(i: number, j: number): [number, number] {
+  const centerLat = i * TILE_DEGREES + TILE_DEGREES / 2;
+  const centerLng = j * TILE_DEGREES + TILE_DEGREES / 2;
+  return [centerLat, centerLng];
+}
+
+// --- Helper: range check ---
 function isInRange(i: number, j: number) {
-  const playerI = Math.floor(CLASSROOM_LATLNG.lat / TILE_DEGREES);
-  const playerJ = Math.floor(CLASSROOM_LATLNG.lng / TILE_DEGREES);
-  const di = Math.abs(i - playerI);
-  const dj = Math.abs(j - playerJ);
+  const playerCell = latLngToCell(CLASSROOM_LATLNG.lat, CLASSROOM_LATLNG.lng);
+  const di = Math.abs(i - playerCell.i);
+  const dj = Math.abs(j - playerCell.j);
   return di <= INTERACTION_RADIUS_CELLS && dj <= INTERACTION_RADIUS_CELLS;
 }
 
-// --- Draw visible grid with tokens and highlights ---
+// --- Interaction: click handling ---
+function onMapClick(e: L.LeafletMouseEvent) {
+  const { lat, lng } = e.latlng;
+  const { i, j } = latLngToCell(lat, lng);
+
+  if (!isInRange(i, j)) return; // ignore distant clicks
+
+  const key = `${i},${j}`;
+  const cellToken = tokenMap.get(key) || getToken(i, j);
+
+  // CASE 1: player has empty hand, cell has token → pick it up
+  if (!heldToken && cellToken) {
+    heldToken = cellToken;
+    tokenMap.delete(key); // remove from grid
+    emptyCells.add(key); // mark as permanently empty
+    updateStatus();
+    drawGrid();
+    return;
+  }
+
+  // CASE 2: player holding token
+  if (heldToken) {
+    if (!cellToken) {
+      // place token on empty cell
+      tokenMap.set(key, heldToken);
+      emptyCells.delete(key); // make cell active again
+      heldToken = null;
+    } else if (cellToken.value === heldToken.value) {
+      // merge same-value tokens
+      tokenMap.set(key, { value: cellToken.value * 2 });
+      heldToken = null;
+    } else {
+      // incompatible merge: do nothing
+      return;
+    }
+    updateStatus();
+    drawGrid();
+  }
+}
+
+// --- Draw visible grid with tokens ---
 function drawGrid() {
   gridLayer.clearLayers();
 
@@ -110,8 +156,6 @@ function drawGrid() {
       ];
 
       const inRange = isInRange(i, j);
-
-      // Make nearby cells highlighted
       const rectColor = inRange ? "#00f" : "#555";
       const rectWeight = inRange ? 2 : 1;
 
@@ -121,12 +165,10 @@ function drawGrid() {
         fillOpacity: 0,
       }).addTo(gridLayer);
 
-      // Add token marker if cell has one
-      const token = getToken(i, j);
+      const key = `${i},${j}`;
+      const token = tokenMap.get(key) || getToken(i, j);
       if (token) {
-        const centerLat = i * TILE_DEGREES + TILE_DEGREES / 2;
-        const centerLng = j * TILE_DEGREES + TILE_DEGREES / 2;
-
+        const [centerLat, centerLng] = cellToCenter(i, j);
         L.marker([centerLat, centerLng], {
           icon: L.divIcon({
             className: "token-marker",
@@ -139,7 +181,18 @@ function drawGrid() {
   }
 }
 
-// --- Initial draw and updates ---
+// --- UI update ---
+function updateStatus() {
+  if (heldToken) {
+    statusPanelDiv.textContent = `Held token: ${heldToken.value}`;
+  } else {
+    statusPanelDiv.textContent = "Hand empty";
+  }
+}
+
+// --- Initialize ---
+updateStatus();
 drawGrid();
 map.on("moveend", drawGrid);
 map.on("zoomend", drawGrid);
+map.on("click", onMapClick);

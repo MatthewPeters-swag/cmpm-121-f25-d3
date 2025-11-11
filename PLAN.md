@@ -60,19 +60,14 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 
 -- Interaction + Gameplay --
 
-- [ ] Allow player to click nearby cells to interact
-- [ ] If cell has token and player hand is empty → pick up token (remove from cell)
+- [x] Allow player to click nearby cells to interact
+- [x] If cell has token and player hand is empty → pick up token (remove from cell)
 - [ ] If player holds a token → clicking another nearby cell will attempt to place it
 
-  - [ ] If target cell empty → place token
-  - [ ] If target cell contains token of same value → merge into double-value token
+  - [x] If target cell empty → place token
+  - [x] If target cell contains token of same value → merge into double-value token
 
-- [ ] Update on-screen UI to show player’s held token (or empty hand)
-
--- Win Condition --
-
-- [ ] Detect when player holds a token with a value ≥ goal value (e.g. 8 or 16)
-- [ ] Display a simple “You Win!” message or visual cue
+- [x] Update on-screen UI to show player’s held token (or empty hand)
 
 -- Persistence --
 
