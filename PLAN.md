@@ -47,10 +47,10 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 
 -- Token System --
 
-- [ ] Use deterministic hashing (Luck library) to decide whether each cell spawns a token
-- [ ] Assign token values (e.g. 2 or 4) based on deterministic randomness
-- [ ] Display token values visually in each cell (text, icon, or canvas graphics)
-- [ ] Ensure token layout is consistent across page reloads
+- [x] Use deterministic hashing (Luck library) to decide whether each cell spawns a token
+- [x] Assign token values (e.g. 2 or 4) based on deterministic randomness
+- [x] Display token values visually in each cell (text, icon, or canvas graphics)
+- [x] Ensure token layout is consistent across page reloads
 
 -- Player Representation --
 

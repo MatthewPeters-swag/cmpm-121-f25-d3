@@ -2,6 +2,9 @@ import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
 
+// Import luck function for deterministic randomness
+import luck from "./_luck.ts";
+
 // Create basic UI elements
 const controlPanelDiv = document.createElement("div");
 controlPanelDiv.id = "controlPanel";
@@ -41,8 +44,34 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 // Grid parameters
 const TILE_DEGREES = 0.0001; // size of each cell in degrees
 
+// Token parameters
+const TOKEN_PROBABILITY = 0.1; // chance a cell has a token
+const TOKEN_VALUES = [2, 4]; // possible token values
+
 // Layer group to hold the grid rectangles
 const gridLayer = L.layerGroup().addTo(map);
+
+// Map from cell keys to token info (persistent across redraws)
+const tokenMap = new Map<string, { value: number }>();
+
+// Function to get deterministic token for a cell
+function getToken(i: number, j: number) {
+  const key = `${i},${j}`;
+  if (tokenMap.has(key)) {
+    return tokenMap.get(key);
+  }
+
+  const r = luck(key);
+  if (r < TOKEN_PROBABILITY) {
+    // Pick value deterministically (based on key)
+    const valueIndex = Math.floor(luck(key + "_value") * TOKEN_VALUES.length);
+    const token = { value: TOKEN_VALUES[valueIndex] };
+    tokenMap.set(key, token);
+    return token;
+  }
+
+  return null;
+}
 
 // Function to draw grid cells in the current map bounds
 function drawGrid() {
@@ -63,19 +92,31 @@ function drawGrid() {
 
   for (let i = iStart; i <= iEnd; i++) {
     for (let j = jStart; j <= jEnd; j++) {
-      const rect = L.rectangle(
-        [
-          [i * TILE_DEGREES, j * TILE_DEGREES],
-          [(i + 1) * TILE_DEGREES, (j + 1) * TILE_DEGREES],
-        ],
-        {
-          color: "#555",
-          weight: 1,
-          fillOpacity: 0,
-        },
-      );
+      const rectBounds: L.LatLngTuple[] = [
+        [i * TILE_DEGREES, j * TILE_DEGREES],
+        [(i + 1) * TILE_DEGREES, (j + 1) * TILE_DEGREES],
+      ];
 
-      rect.addTo(gridLayer);
+      L.rectangle(rectBounds, {
+        color: "#555",
+        weight: 1,
+        fillOpacity: 0,
+      }).addTo(gridLayer);
+
+      // Display token if cell has one
+      const token = getToken(i, j);
+      if (token) {
+        const centerLat = i * TILE_DEGREES + TILE_DEGREES / 2;
+        const centerLng = j * TILE_DEGREES + TILE_DEGREES / 2;
+
+        L.marker([centerLat, centerLng], {
+          icon: L.divIcon({
+            className: "token-marker",
+            html: `<div>${token.value}</div>`,
+            iconSize: [20, 20],
+          }),
+        }).addTo(gridLayer);
+      }
     }
   }
 }
