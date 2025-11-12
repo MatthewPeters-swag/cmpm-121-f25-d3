@@ -87,8 +87,28 @@ Allow players to collect and merge nearby tokens into higher-value ones, followi
 - [ ] Add player hand UI and nearby-cell interaction rules
 - [ ] Test crafting logic and ensure merge rules follow 4096 pattern
 
--- D3.b: Map Expansion and Player Progression (placeholder) --
-Will focus on adding persistence for player movement, token variety, and progressive difficulty.
+-- D3.b: Globe-spanning Gameplay --
+
+Key Technical Challenge:\
+Implement global coordinate-based grid rendering with dynamic cell spawning and despawning as the player moves or pans across the map.
+
+Key Gameplay Challenge:\
+Allow players to travel across a near-infinite map, interacting only with nearby cells, while maintaining deterministic token generation and 4096-style crafting.
+
+-- Steps --
+
+-- Player Movement Simulation --
+
+- [x] Add directional buttons (North, South, East, West) that move the player marker by one grid step (≈0.0001°)
+- [x] Update interaction radius and nearby-cell highlighting to follow the new player position
+- [x] Ensure map view recenters automatically after each movement step
+- [x] Distinguish between player movement (via buttons) and manual map panning
+
+-- Crafting and Victory Condition --
+
+- [ ] Continue using 4096-style merge mechanics for tokens
+- [ ] Set a new win condition requiring the player to craft a higher-value token (e.g., 32 or 64)
+- [ ] Display a simple victory message or overlay when the target token is crafted
 
 -- D3.c: UI and Feedback (placeholder) --
 Will improve interface clarity, add merge animations, and visual polish.

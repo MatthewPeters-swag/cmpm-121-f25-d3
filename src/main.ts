@@ -17,14 +17,18 @@ statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
 // --- Constants ---
-const CLASSROOM_LATLNG = L.latLng(36.997936938057016, -122.05703507501151);
-const ZOOM_LEVEL = 19;
 const TILE_DEGREES = 0.0001;
 const INTERACTION_RADIUS_CELLS = 3;
+const ZOOM_LEVEL = 19;
+
+// --- Player state ---
+let playerLat = 36.997936938057016;
+let playerLng = -122.05703507501151;
+let heldToken: { value: number } | null = null;
 
 // --- Map setup ---
 const map = L.map(mapDiv, {
-  center: CLASSROOM_LATLNG,
+  center: [playerLat, playerLng],
   zoom: ZOOM_LEVEL,
   minZoom: ZOOM_LEVEL,
   maxZoom: ZOOM_LEVEL,
@@ -41,25 +45,22 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 // --- Layers ---
 const gridLayer = L.layerGroup().addTo(map);
 const tokenMap = new Map<string, { value: number }>();
+const emptyCells = new Set<string>();
 
 // --- Token constants ---
 const TOKEN_PROBABILITY = 0.1;
 const TOKEN_VALUES = [2, 4];
 
 // --- Player marker ---
-L.marker(CLASSROOM_LATLNG, { title: "You are here!" }).addTo(map);
-
-// --- Player state ---
-let heldToken: { value: number } | null = null;
-
-// --- Track permanently emptied cells (so tokens don't respawn) ---
-const emptyCells = new Set<string>();
+const playerMarker = L.marker([playerLat, playerLng], {
+  title: "You are here!",
+}).addTo(map);
 
 // --- Helper: deterministic token generation ---
 function getToken(i: number, j: number) {
   const key = `${i},${j}`;
   if (tokenMap.has(key)) return tokenMap.get(key);
-  if (emptyCells.has(key)) return null; // permanently empty
+  if (emptyCells.has(key)) return null;
 
   const r = luck(key);
   if (r < TOKEN_PROBABILITY) {
@@ -87,7 +88,7 @@ function cellToCenter(i: number, j: number): [number, number] {
 
 // --- Helper: range check ---
 function isInRange(i: number, j: number) {
-  const playerCell = latLngToCell(CLASSROOM_LATLNG.lat, CLASSROOM_LATLNG.lng);
+  const playerCell = latLngToCell(playerLat, playerLng);
   const di = Math.abs(i - playerCell.i);
   const dj = Math.abs(j - playerCell.j);
   return di <= INTERACTION_RADIUS_CELLS && dj <= INTERACTION_RADIUS_CELLS;
@@ -106,8 +107,8 @@ function onMapClick(e: L.LeafletMouseEvent) {
   // CASE 1: player has empty hand, cell has token → pick it up
   if (!heldToken && cellToken) {
     heldToken = cellToken;
-    tokenMap.delete(key); // remove from grid
-    emptyCells.add(key); // mark as permanently empty
+    tokenMap.delete(key);
+    emptyCells.add(key);
     updateStatus();
     drawGrid();
     return;
@@ -116,22 +117,49 @@ function onMapClick(e: L.LeafletMouseEvent) {
   // CASE 2: player holding token
   if (heldToken) {
     if (!cellToken) {
-      // place token on empty cell
       tokenMap.set(key, heldToken);
-      emptyCells.delete(key); // make cell active again
+      emptyCells.delete(key);
       heldToken = null;
     } else if (cellToken.value === heldToken.value) {
-      // merge same-value tokens
       tokenMap.set(key, { value: cellToken.value * 2 });
       heldToken = null;
     } else {
-      // incompatible merge: do nothing
       return;
     }
     updateStatus();
     drawGrid();
   }
 }
+
+// --- Player movement ---
+function movePlayer(dLat: number, dLng: number) {
+  playerLat += dLat;
+  playerLng += dLng;
+  playerMarker.setLatLng([playerLat, playerLng]);
+  map.setView([playerLat, playerLng]);
+  drawGrid();
+  updateStatus();
+}
+
+// --- Add movement buttons ---
+const moveButtonsDiv = document.createElement("div");
+moveButtonsDiv.id = "moveButtons";
+moveButtonsDiv.innerHTML = `
+  <button id="moveN">⬆️ North</button>
+  <button id="moveS">⬇️ South</button>
+  <button id="moveW">⬅️ West</button>
+  <button id="moveE">➡️ East</button>
+`;
+controlPanelDiv.append(moveButtonsDiv);
+
+(document.getElementById("moveN") as HTMLButtonElement).onclick = () =>
+  movePlayer(TILE_DEGREES, 0);
+(document.getElementById("moveS") as HTMLButtonElement).onclick = () =>
+  movePlayer(-TILE_DEGREES, 0);
+(document.getElementById("moveW") as HTMLButtonElement).onclick = () =>
+  movePlayer(0, -TILE_DEGREES);
+(document.getElementById("moveE") as HTMLButtonElement).onclick = () =>
+  movePlayer(0, TILE_DEGREES);
 
 // --- Draw visible grid with tokens ---
 function drawGrid() {
@@ -183,10 +211,15 @@ function drawGrid() {
 
 // --- UI update ---
 function updateStatus() {
+  const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${
+    playerLng.toFixed(
+      6,
+    )
+  }`;
   if (heldToken) {
-    statusPanelDiv.textContent = `Held token: ${heldToken.value}`;
+    statusPanelDiv.textContent = `Held token: ${heldToken.value} | ${posInfo}`;
   } else {
-    statusPanelDiv.textContent = "Hand empty";
+    statusPanelDiv.textContent = `Hand empty | ${posInfo}`;
   }
 }
 
