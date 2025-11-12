@@ -106,8 +106,8 @@ Allow players to travel across a near-infinite map, interacting only with nearby
 
 -- Crafting and Victory Condition --
 
-- [ ] Set a new win condition requiring the player to craft a higher-value token (e.g., 32 or 64)
-- [ ] Display a simple victory message or overlay when the target token is crafted
+- [x] Set a new win condition requiring the player to craft a higher-value token (e.g., 32 or 64)
+- [x] Display a simple victory message or overlay when the target token is crafted
 
 -- D3.c: UI and Feedback (placeholder) --
 Will improve interface clarity, add merge animations, and visual polish.
