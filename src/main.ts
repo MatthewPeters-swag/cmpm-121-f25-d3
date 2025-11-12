@@ -16,10 +16,18 @@ const statusPanelDiv = document.createElement("div");
 statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
+// --- Victory overlay ---
+const victoryDiv = document.createElement("div");
+victoryDiv.id = "victoryOverlay";
+victoryDiv.style.display = "none";
+victoryDiv.textContent = "🎉 You won! 🎉";
+document.body.append(victoryDiv);
+
 // --- Constants ---
 const TILE_DEGREES = 0.0001;
 const INTERACTION_RADIUS_CELLS = 3;
 const ZOOM_LEVEL = 19;
+const WIN_VALUE = 32; // token value needed to win
 
 // --- Player state ---
 let playerLat = 36.997936938057016;
@@ -121,14 +129,24 @@ function onMapClick(e: L.LeafletMouseEvent) {
       emptyCells.delete(key);
       heldToken = null;
     } else if (cellToken.value === heldToken.value) {
-      tokenMap.set(key, { value: cellToken.value * 2 });
+      const newValue = cellToken.value * 2;
+      tokenMap.set(key, { value: newValue });
       heldToken = null;
+
+      if (newValue >= WIN_VALUE) {
+        showVictory();
+      }
     } else {
       return;
     }
     updateStatus();
     drawGrid();
   }
+}
+
+// --- Victory function ---
+function showVictory() {
+  victoryDiv.style.display = "block";
 }
 
 // --- Player movement ---
@@ -211,11 +229,9 @@ function drawGrid() {
 
 // --- UI update ---
 function updateStatus() {
-  const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${
-    playerLng.toFixed(
-      6,
-    )
-  }`;
+  const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${playerLng.toFixed(
+    6
+  )}`;
   if (heldToken) {
     statusPanelDiv.textContent = `Held token: ${heldToken.value} | ${posInfo}`;
   } else {

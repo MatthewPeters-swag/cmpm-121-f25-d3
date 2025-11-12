@@ -106,7 +106,6 @@ Allow players to travel across a near-infinite map, interacting only with nearby
 
 -- Crafting and Victory Condition --
 
-- [ ] Continue using 4096-style merge mechanics for tokens
 - [ ] Set a new win condition requiring the player to craft a higher-value token (e.g., 32 or 64)
 - [ ] Display a simple victory message or overlay when the target token is crafted
 
