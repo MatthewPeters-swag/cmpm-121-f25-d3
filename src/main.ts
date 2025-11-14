@@ -1,3 +1,5 @@
+// main.ts — D3.c enabled (Flyweight + Memento for modified cells)
+
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
@@ -16,18 +18,26 @@ const statusPanelDiv = document.createElement("div");
 statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
-// --- Victory overlay ---
+// --- Victory overlay (already used in D3.b) ---
 const victoryDiv = document.createElement("div");
 victoryDiv.id = "victoryOverlay";
 victoryDiv.style.display = "none";
 victoryDiv.textContent = "🎉 You won! 🎉";
 document.body.append(victoryDiv);
 
+// --- Types ---
+type CellState = {
+  // value === null => explicitly empty (player removed token)
+  // value === number => token value placed or merged here
+  value: number | null;
+  // optional metadata could be added later, e.g. timestamp, owner, etc.
+};
+
 // --- Constants ---
 const TILE_DEGREES = 0.0001;
 const INTERACTION_RADIUS_CELLS = 3;
 const ZOOM_LEVEL = 19;
-const WIN_VALUE = 32; // token value needed to win
+const WIN_VALUE = 32;
 
 // --- Player state ---
 let playerLat = 36.997936938057016;
@@ -52,10 +62,13 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 // --- Layers ---
 const gridLayer = L.layerGroup().addTo(map);
-const tokenMap = new Map<string, { value: number }>();
-const emptyCells = new Set<string>();
 
-// --- Token constants ---
+// --- Flyweight / Memento store ---
+// Only store cells that have been modified by the player.
+// Key format: "i,j"
+const modifiedCells = new Map<string, CellState>();
+
+// --- Deterministic generation params (for unmodified cells) ---
 const TOKEN_PROBABILITY = 0.1;
 const TOKEN_VALUES = [2, 4];
 
@@ -64,23 +77,25 @@ const playerMarker = L.marker([playerLat, playerLng], {
   title: "You are here!",
 }).addTo(map);
 
-// --- Helper: deterministic token generation ---
-function getToken(i: number, j: number) {
-  const key = `${i},${j}`;
-  if (tokenMap.has(key)) return tokenMap.get(key);
-  if (emptyCells.has(key)) return null;
+// --- Utility: cell key ---
+function cellKey(i: number, j: number) {
+  return `${i},${j}`;
+}
 
-  const r = luck(key);
+// --- Helper: deterministic token generation (no memory) ---
+// This returns a token object (value) for unmodified cells, but
+// does NOT save the result to modifiedCells; it is memoryless.
+function deterministicTokenFor(i: number, j: number): { value: number } | null {
+  const keySeed = `${i},${j}`;
+  const r = luck(keySeed);
   if (r < TOKEN_PROBABILITY) {
-    const valueIndex = Math.floor(luck(key + "_v") * TOKEN_VALUES.length);
-    const token = { value: TOKEN_VALUES[valueIndex] };
-    tokenMap.set(key, token);
-    return token;
+    const valueIndex = Math.floor(luck(keySeed + "_v") * TOKEN_VALUES.length);
+    return { value: TOKEN_VALUES[valueIndex] };
   }
   return null;
 }
 
-// --- Helper: coordinate conversions ---
+// --- Coordinate helpers ---
 function latLngToCell(lat: number, lng: number) {
   return {
     i: Math.floor(lat / TILE_DEGREES),
@@ -94,7 +109,7 @@ function cellToCenter(i: number, j: number): [number, number] {
   return [centerLat, centerLng];
 }
 
-// --- Helper: range check ---
+// --- Range check ---
 function isInRange(i: number, j: number) {
   const playerCell = latLngToCell(playerLat, playerLng);
   const di = Math.abs(i - playerCell.i);
@@ -102,84 +117,72 @@ function isInRange(i: number, j: number) {
   return di <= INTERACTION_RADIUS_CELLS && dj <= INTERACTION_RADIUS_CELLS;
 }
 
-// --- Interaction: click handling ---
+// --- Interaction: click handling (uses modifiedCells) ---
 function onMapClick(e: L.LeafletMouseEvent) {
   const { lat, lng } = e.latlng;
   const { i, j } = latLngToCell(lat, lng);
 
   if (!isInRange(i, j)) return; // ignore distant clicks
 
-  const key = `${i},${j}`;
-  const cellToken = tokenMap.get(key) || getToken(i, j);
+  const key = cellKey(i, j);
+  // Determine cell state: prefer modifiedCells (memento), otherwise ephemeral deterministic
+  const saved = modifiedCells.get(key);
+  const ephemeral = deterministicTokenFor(i, j);
+  const cellHasToken = saved ? saved.value !== null : ephemeral !== null;
 
-  // CASE 1: player has empty hand, cell has token → pick it up
-  if (!heldToken && cellToken) {
-    heldToken = cellToken;
-    tokenMap.delete(key);
-    emptyCells.add(key);
+  // CASE 1: empty hand + token available -> pick up
+  if (!heldToken && cellHasToken) {
+    // Determine token value
+    const tokenValue = saved
+      ? (saved.value as number)
+      : (ephemeral as { value: number }).value;
+
+    heldToken = { value: tokenValue };
+
+    // Persist that this cell is now empty (memento). This prevents deterministic respawn.
+    modifiedCells.set(key, { value: null });
+
     updateStatus();
     drawGrid();
     return;
   }
 
-  // CASE 2: player holding token
+  // CASE 2: holding token
   if (heldToken) {
-    if (!cellToken) {
-      tokenMap.set(key, heldToken);
-      emptyCells.delete(key);
+    const held = heldToken;
+    if (!cellHasToken) {
+      // Place token on empty cell: persist in modifiedCells
+      modifiedCells.set(key, { value: held.value });
       heldToken = null;
-    } else if (cellToken.value === heldToken.value) {
-      const newValue = cellToken.value * 2;
-      tokenMap.set(key, { value: newValue });
-      heldToken = null;
-
-      if (newValue >= WIN_VALUE) {
-        showVictory();
-      }
-    } else {
+      updateStatus();
+      drawGrid();
       return;
+    } else {
+      // cell has token: get its value (from saved or ephemeral)
+      const cellValue = saved
+        ? saved.value
+        : (ephemeral as { value: number }).value;
+
+      // If equal → merge
+      if (cellValue === held.value) {
+        const newValue = cellValue! * 2;
+        modifiedCells.set(key, { value: newValue });
+        heldToken = null;
+        updateStatus();
+        drawGrid();
+
+        // Win check
+        if (newValue >= WIN_VALUE) showVictory();
+        return;
+      } else {
+        // incompatible — do nothing
+        return;
+      }
     }
-    updateStatus();
-    drawGrid();
   }
 }
 
-// --- Victory function ---
-function showVictory() {
-  victoryDiv.style.display = "block";
-}
-
-// --- Player movement ---
-function movePlayer(dLat: number, dLng: number) {
-  playerLat += dLat;
-  playerLng += dLng;
-  playerMarker.setLatLng([playerLat, playerLng]);
-  map.setView([playerLat, playerLng]);
-  drawGrid();
-  updateStatus();
-}
-
-// --- Add movement buttons ---
-const moveButtonsDiv = document.createElement("div");
-moveButtonsDiv.id = "moveButtons";
-moveButtonsDiv.innerHTML = `
-  <button id="moveN">⬆️ North</button>
-  <button id="moveS">⬇️ South</button>
-  <button id="moveW">⬅️ West</button>
-  <button id="moveE">➡️ East</button>
-`;
-controlPanelDiv.append(moveButtonsDiv);
-
-(document.getElementById("moveN") as HTMLButtonElement).onclick = () =>
-  movePlayer(TILE_DEGREES, 0);
-(document.getElementById("moveS") as HTMLButtonElement).onclick = () =>
-  movePlayer(-TILE_DEGREES, 0);
-(document.getElementById("moveW") as HTMLButtonElement).onclick = () =>
-  movePlayer(0, -TILE_DEGREES);
-(document.getElementById("moveE") as HTMLButtonElement).onclick = () =>
-  movePlayer(0, TILE_DEGREES);
-
-// --- Draw visible grid with tokens ---
+// --- Draw visible grid with tokens (always recreates visual objects) ---
 function drawGrid() {
   gridLayer.clearLayers();
 
@@ -211,23 +214,39 @@ function drawGrid() {
         fillOpacity: 0,
       }).addTo(gridLayer);
 
-      const key = `${i},${j}`;
-      const token = tokenMap.get(key) || getToken(i, j);
-      if (token) {
-        const [centerLat, centerLng] = cellToCenter(i, j);
-        L.marker([centerLat, centerLng], {
-          icon: L.divIcon({
-            className: "token-marker",
-            html: `<div>${token.value}</div>`,
-            iconSize: [20, 20],
-          }),
-        }).addTo(gridLayer);
+      const key = cellKey(i, j);
+      const saved = modifiedCells.get(key);
+      if (saved) {
+        // Persisted state: might be empty or have a token
+        if (saved.value !== null) {
+          const [centerLat, centerLng] = cellToCenter(i, j);
+          L.marker([centerLat, centerLng], {
+            icon: L.divIcon({
+              className: "token-marker",
+              html: `<div>${saved.value}</div>`,
+              iconSize: [20, 20],
+            }),
+          }).addTo(gridLayer);
+        }
+      } else {
+        // Not modified: generate deterministically (ephemeral)
+        const det = deterministicTokenFor(i, j);
+        if (det) {
+          const [centerLat, centerLng] = cellToCenter(i, j);
+          L.marker([centerLat, centerLng], {
+            icon: L.divIcon({
+              className: "token-marker",
+              html: `<div>${det.value}</div>`,
+              iconSize: [20, 20],
+            }),
+          }).addTo(gridLayer);
+        }
       }
     }
   }
 }
 
-// --- UI update ---
+// --- UI updates ---
 function updateStatus() {
   const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${playerLng.toFixed(6)}`;
   if (heldToken) {
@@ -237,9 +256,46 @@ function updateStatus() {
   }
 }
 
-// --- Initialize ---
-updateStatus();
-drawGrid();
+// --- Victory ---
+function showVictory() {
+  victoryDiv.style.display = "block";
+}
+
+// --- Player movement (buttons) ---
+function movePlayer(dLat: number, dLng: number) {
+  playerLat += dLat;
+  playerLng += dLng;
+  playerMarker.setLatLng([playerLat, playerLng]);
+  map.setView([playerLat, playerLng]);
+  drawGrid();
+  updateStatus();
+}
+
+// --- Movement buttons UI ---
+const moveButtonsDiv = document.createElement("div");
+moveButtonsDiv.id = "moveButtons";
+moveButtonsDiv.innerHTML = `
+  <button id="moveN">⬆️ North</button>
+  <button id="moveS">⬇️ South</button>
+  <button id="moveW">⬅️ West</button>
+  <button id="moveE">➡️ East</button>
+`;
+controlPanelDiv.append(moveButtonsDiv);
+
+(document.getElementById("moveN") as HTMLButtonElement).onclick = () =>
+  movePlayer(TILE_DEGREES, 0);
+(document.getElementById("moveS") as HTMLButtonElement).onclick = () =>
+  movePlayer(-TILE_DEGREES, 0);
+(document.getElementById("moveW") as HTMLButtonElement).onclick = () =>
+  movePlayer(0, -TILE_DEGREES);
+(document.getElementById("moveE") as HTMLButtonElement).onclick = () =>
+  movePlayer(0, TILE_DEGREES);
+
+// --- Map event bindings ---
 map.on("moveend", drawGrid);
 map.on("zoomend", drawGrid);
 map.on("click", onMapClick);
+
+// --- Initialize ---
+updateStatus();
+drawGrid();

@@ -110,7 +110,19 @@ Allow players to travel across a near-infinite map, interacting only with nearby
 - [x] Display a simple victory message or overlay when the target token is crafted
 
 -- D3.c: UI and Feedback (placeholder) --
-Will improve interface clarity, add merge animations, and visual polish.
+
+-- Software Requirements --
+
+- [x] Apply a Flyweight-like strategy so unmodified, off-screen cells do not occupy memory.
+- [x] Implement a Memento-like model for storing modified cells when they leave the screen.
+- [x] Restore modified cell state when they come back into view.
+- [x] Maintain a global Map keyed by cell coordinates (i,j) holding only modified cell states.
+
+-- Gameplay Requirements --
+
+- [x] Cells now preserve their modified state even when scrolled off the map.
+- [x] Unmodified cells regenerate from deterministic randomness.
+- [x] Player can no longer farm tokens by moving away and back — modified cells persist.
 
 -- D3.d: Polishing and Deployment (placeholder) --
 Final bug fixes, performance tuning, and deployment automation.
