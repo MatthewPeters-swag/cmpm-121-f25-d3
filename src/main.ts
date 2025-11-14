@@ -229,11 +229,7 @@ function drawGrid() {
 
 // --- UI update ---
 function updateStatus() {
-  const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${
-    playerLng.toFixed(
-      6,
-    )
-  }`;
+  const posInfo = `Lat: ${playerLat.toFixed(6)}, Lng: ${playerLng.toFixed(6)}`;
   if (heldToken) {
     statusPanelDiv.textContent = `Held token: ${heldToken.value} | ${posInfo}`;
   } else {
