@@ -1,4 +1,4 @@
-// main.ts — D3.c enabled (Flyweight + Memento for modified cells)
+// main.ts — D3.c + D3.d (Full geolocation + button switching + New Game)
 
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -18,7 +18,7 @@ const statusPanelDiv = document.createElement("div");
 statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
-// --- Victory overlay (already used in D3.b) ---
+// --- Victory overlay ---
 const victoryDiv = document.createElement("div");
 victoryDiv.id = "victoryOverlay";
 victoryDiv.style.display = "none";
@@ -27,10 +27,7 @@ document.body.append(victoryDiv);
 
 // --- Types ---
 type CellState = {
-  // value === null => explicitly empty (player removed token)
-  // value === number => token value placed or merged here
   value: number | null;
-  // optional metadata could be added later, e.g. timestamp, owner, etc.
 };
 
 // --- Constants ---
@@ -64,11 +61,9 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const gridLayer = L.layerGroup().addTo(map);
 
 // --- Flyweight / Memento store ---
-// Only store cells that have been modified by the player.
-// Key format: "i,j"
 const modifiedCells = new Map<string, CellState>();
 
-// --- Deterministic generation params (for unmodified cells) ---
+// --- Deterministic generation params ---
 const TOKEN_PROBABILITY = 0.1;
 const TOKEN_VALUES = [2, 4];
 
@@ -77,14 +72,11 @@ const playerMarker = L.marker([playerLat, playerLng], {
   title: "You are here!",
 }).addTo(map);
 
-// --- Utility: cell key ---
+// --- Utility ---
 function cellKey(i: number, j: number) {
   return `${i},${j}`;
 }
 
-// --- Helper: deterministic token generation (no memory) ---
-// This returns a token object (value) for unmodified cells, but
-// does NOT save the result to modifiedCells; it is memoryless.
 function deterministicTokenFor(i: number, j: number): { value: number } | null {
   const keySeed = `${i},${j}`;
   const r = luck(keySeed);
@@ -95,7 +87,6 @@ function deterministicTokenFor(i: number, j: number): { value: number } | null {
   return null;
 }
 
-// --- Coordinate helpers ---
 function latLngToCell(lat: number, lng: number) {
   return {
     i: Math.floor(lat / TILE_DEGREES),
@@ -109,7 +100,6 @@ function cellToCenter(i: number, j: number): [number, number] {
   return [centerLat, centerLng];
 }
 
-// --- Range check ---
 function isInRange(i: number, j: number) {
   const playerCell = latLngToCell(playerLat, playerLng);
   const di = Math.abs(i - playerCell.i);
@@ -117,72 +107,60 @@ function isInRange(i: number, j: number) {
   return di <= INTERACTION_RADIUS_CELLS && dj <= INTERACTION_RADIUS_CELLS;
 }
 
-// --- Interaction: click handling (uses modifiedCells) ---
+// --- Interaction ---
 function onMapClick(e: L.LeafletMouseEvent) {
   const { lat, lng } = e.latlng;
   const { i, j } = latLngToCell(lat, lng);
 
-  if (!isInRange(i, j)) return; // ignore distant clicks
+  if (!isInRange(i, j)) return;
 
   const key = cellKey(i, j);
-  // Determine cell state: prefer modifiedCells (memento), otherwise ephemeral deterministic
   const saved = modifiedCells.get(key);
   const ephemeral = deterministicTokenFor(i, j);
   const cellHasToken = saved ? saved.value !== null : ephemeral !== null;
 
-  // CASE 1: empty hand + token available -> pick up
   if (!heldToken && cellHasToken) {
-    // Determine token value
     const tokenValue = saved
       ? (saved.value as number)
       : (ephemeral as { value: number }).value;
-
     heldToken = { value: tokenValue };
-
-    // Persist that this cell is now empty (memento). This prevents deterministic respawn.
     modifiedCells.set(key, { value: null });
-
     updateStatus();
     drawGrid();
+    saveGameState();
     return;
   }
 
-  // CASE 2: holding token
   if (heldToken) {
     const held = heldToken;
     if (!cellHasToken) {
-      // Place token on empty cell: persist in modifiedCells
       modifiedCells.set(key, { value: held.value });
       heldToken = null;
       updateStatus();
       drawGrid();
+      saveGameState();
       return;
     } else {
-      // cell has token: get its value (from saved or ephemeral)
       const cellValue = saved
         ? saved.value
         : (ephemeral as { value: number }).value;
-
-      // If equal → merge
       if (cellValue === held.value) {
         const newValue = cellValue! * 2;
         modifiedCells.set(key, { value: newValue });
         heldToken = null;
         updateStatus();
         drawGrid();
-
-        // Win check
+        saveGameState();
         if (newValue >= WIN_VALUE) showVictory();
         return;
       } else {
-        // incompatible — do nothing
         return;
       }
     }
   }
 }
 
-// --- Draw visible grid with tokens (always recreates visual objects) ---
+// --- Draw grid ---
 function drawGrid() {
   gridLayer.clearLayers();
 
@@ -217,7 +195,6 @@ function drawGrid() {
       const key = cellKey(i, j);
       const saved = modifiedCells.get(key);
       if (saved) {
-        // Persisted state: might be empty or have a token
         if (saved.value !== null) {
           const [centerLat, centerLng] = cellToCenter(i, j);
           L.marker([centerLat, centerLng], {
@@ -229,7 +206,6 @@ function drawGrid() {
           }).addTo(gridLayer);
         }
       } else {
-        // Not modified: generate deterministically (ephemeral)
         const det = deterministicTokenFor(i, j);
         if (det) {
           const [centerLat, centerLng] = cellToCenter(i, j);
@@ -261,6 +237,68 @@ function showVictory() {
   victoryDiv.style.display = "block";
 }
 
+// --- Movement interface & Facade ---
+interface MovementFacade {
+  start(): void;
+  stop(): void;
+}
+
+class ButtonMovement implements MovementFacade {
+  start() {/* button clicks are already wired below */}
+  stop() {/* optional: remove button listeners */}
+}
+
+class GeolocationMovement implements MovementFacade {
+  private watchId?: number;
+  start() {
+    if ("geolocation" in navigator) {
+      this.watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          playerLat = pos.coords.latitude;
+          playerLng = pos.coords.longitude;
+          playerMarker.setLatLng([playerLat, playerLng]);
+          map.setView([playerLat, playerLng]);
+          drawGrid();
+          updateStatus();
+          saveGameState();
+        },
+        (err) => console.error(err),
+        { enableHighAccuracy: true },
+      );
+    }
+  }
+  stop() {
+    if (this.watchId !== undefined) {
+      navigator.geolocation.clearWatch(this.watchId);
+    }
+  }
+}
+
+// --- Persistence ---
+function saveGameState() {
+  const state = {
+    playerLat,
+    playerLng,
+    heldToken,
+    modifiedCells: Array.from(modifiedCells.entries()),
+  };
+  localStorage.setItem("gridCrafterState", JSON.stringify(state));
+}
+
+function loadGameState() {
+  const raw = localStorage.getItem("gridCrafterState");
+  if (raw) {
+    const state = JSON.parse(raw);
+    playerLat = state.playerLat;
+    playerLng = state.playerLng;
+    heldToken = state.heldToken;
+    modifiedCells.clear();
+    state.modifiedCells.forEach(([key, cell]: [string, CellState]) =>
+      modifiedCells.set(key, cell)
+    );
+  }
+}
+
 // --- Player movement (buttons) ---
 function movePlayer(dLat: number, dLng: number) {
   playerLat += dLat;
@@ -269,6 +307,7 @@ function movePlayer(dLat: number, dLng: number) {
   map.setView([playerLat, playerLng]);
   drawGrid();
   updateStatus();
+  saveGameState();
 }
 
 // --- Movement buttons UI ---
@@ -291,11 +330,47 @@ controlPanelDiv.append(moveButtonsDiv);
 (document.getElementById("moveE") as HTMLButtonElement).onclick = () =>
   movePlayer(0, TILE_DEGREES);
 
+// --- Runtime Movement Switching + New Game ---
+const newGameBtn = document.createElement("button");
+newGameBtn.textContent = "New Game";
+controlPanelDiv.append(newGameBtn);
+newGameBtn.onclick = () => {
+  localStorage.removeItem("gridCrafterState");
+  modifiedCells.clear();
+  heldToken = null;
+  playerLat = 36.997936938057016;
+  playerLng = -122.05703507501151;
+  victoryDiv.style.display = "none";
+  updateStatus();
+  drawGrid();
+};
+
+// Movement type selector
+const movementSelect = document.createElement("select");
+movementSelect.innerHTML = `
+  <option value="buttons">Button Movement</option>
+  <option value="geolocation">Geolocation Movement</option>
+`;
+controlPanelDiv.append(movementSelect);
+
+let currentMovement: MovementFacade = new ButtonMovement();
+movementSelect.onchange = () => {
+  currentMovement.stop();
+  if (movementSelect.value === "geolocation") {
+    currentMovement = new GeolocationMovement();
+  } else {
+    currentMovement = new ButtonMovement();
+  }
+  currentMovement.start();
+};
+
 // --- Map event bindings ---
 map.on("moveend", drawGrid);
 map.on("zoomend", drawGrid);
 map.on("click", onMapClick);
 
 // --- Initialize ---
+loadGameState();
 updateStatus();
 drawGrid();
+currentMovement.start();

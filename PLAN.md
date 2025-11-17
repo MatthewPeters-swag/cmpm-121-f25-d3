@@ -124,5 +124,21 @@ Allow players to travel across a near-infinite map, interacting only with nearby
 - [x] Unmodified cells regenerate from deterministic randomness.
 - [x] Player can no longer farm tokens by moving away and back — modified cells persist.
 
+-- D3.d: Gameplay Across Real-world Space and Time --
+
+-- Software Requirements --
+
+- [x] Use the browser Geolocation API to control player movement instead of on-screen buttons.
+- [x] Hide the movement implementation behind an interface so most game code is abstracted from movement details.
+- [x] Implement this interface as a Facade to unify button-based and geolocation-based movement systems.
+- [x] Use the browser localStorage API to persist full game state across page loads.
+
+-- Gameplay Requirements --
+
+- [x] Player moves their character by physically moving with their device in the real world.
+- [x] Closing and reopening the game's page restores the exact previous game state.
+- [x] Provide a way for the player to start a new game.
+- [x] Provide a way to switch between button-based and geolocation-based movement (runtime UI control or query-string selection, e.g., `?movement=geolocation` or `?movement=buttons`).
+
 -- D3.d: Polishing and Deployment (placeholder) --
 Final bug fixes, performance tuning, and deployment automation.
